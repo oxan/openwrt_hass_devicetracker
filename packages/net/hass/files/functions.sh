@@ -70,19 +70,6 @@ function get_host_name {
     nslookup "$(get_ip $1)" | grep -o "name = .*$" | cut -d ' ' -f 3
 }
 
-function is_connected {
-    # check if MAC address is still connected to any wireless interface
-    mac=$1
-
-    for interface in `iw dev | grep Interface | cut -f 2 -s -d" "`; do
-        if iw dev $interface station dump | grep Station | grep -q $mac; then
-            return 0
-        fi
-    done
-
-    return 1
-}
-
 function push_event {
     logger -t $0 -p debug "push_event $@"
     if [ "$#" -ne 3 ]; then
@@ -98,16 +85,20 @@ function push_event {
     
     case $msg in 
         "AP-STA-CONNECTED")
+            mkdir -p /tmp/hass/${mac}
+            touch /tmp/hass/${mac}/${iface}
             timeout=$hass_timeout_conn
             ;;
         "AP-STA-POLL-OK")
             timeout=$hass_timeout_conn
             ;;
         "AP-STA-DISCONNECTED")
-            if is_connected $mac; then
-                logger -t $0 -p debug "push_event ignored as device is still online"
+            rm -f /tmp/hass/${mac}/${iface}
+            if [ -n "$(ls -A /tmp/hass/${mac})" ]; then
+                logger -t $0 -p debug "push_event ignored as device is still connected on interface(s) $(ls -A /tmp/hass/${mac})"
                 return
             fi
+
             timeout=$hass_timeout_disc
             ;;
         *)

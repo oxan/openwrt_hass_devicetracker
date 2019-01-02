@@ -5,6 +5,7 @@ source /lib/functions.sh
 config_load hass
 
 logger -t $0 -p info "Starting up"
+mkdir -p /tmp/hass
 
 source /usr/lib/hass/functions.sh
 
