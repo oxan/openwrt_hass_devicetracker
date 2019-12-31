@@ -23,18 +23,11 @@ post() {
     payload=$1
     
     config_get hass_host global host
-    config_get hass_token global token "0"
-    config_get hass_pw global pw
-    
-    if [ "$hass_token" != "0" ]; then
-        auth_head="Authorization: Bearer $hass_token"
-    else
-        auth_head="X-HA-Access: $hass_pw"
-    fi
+    config_get hass_token global token
     
     resp=$(curl "$hass_host/api/services/device_tracker/see" -sfSX POST \
         -H 'Content-Type: application/json' \
-        -H "$auth_head" \
+        -H "Authorization: Bearer $hass_token" \
         --data-binary "$payload" 2>&1)
     
     if [ $? -eq 0 ]; then
@@ -48,7 +41,7 @@ post() {
 
 build_payload() {
     logger -t $0 -p debug "build_payload $@"
-    if [ "$#" -ne 3 ]; then
+    if [ "$#" -ne 4 ]; then
         err_msg "Invalid payload parameters"
         logger -t $0 -p warning "push_event not handled"
         exit 1
@@ -56,8 +49,9 @@ build_payload() {
     mac=$1
     host=$2
     consider_home=$3
+    source_name=$4
     
-    echo "{\"mac\":\"$mac\",\"host_name\":\"$host\",\"consider_home\":\"$consider_home\",\"source_type\":\"router\"}"
+    echo "{\"mac\":\"$mac\",\"host_name\":\"$host\",\"consider_home\":\"$consider_home\",\"source_type\":\"router\",\"attributes\":{\"source_name\":\"$source_name\"}}"
 }
 
 get_ip() {
@@ -70,31 +64,31 @@ get_host_name() {
     nslookup "$(get_ip $1)" | grep -o "name = .*$" | cut -d ' ' -f 3
 }
 
-is_connected() {
-    # check if MAC address is still connected to any wireless interface
-    mac=$1
-
-    for interface in `iw dev | grep Interface | cut -f 2 -s -d" "`; do
-        if iw dev $interface station dump | grep Station | grep -q $mac; then
-            return 0
-        fi
-    done
-
-    return 1
-}
-
 push_event() {
     logger -t $0 -p debug "push_event $@"
-    if [ "$#" -ne 3 ]; then
+    if [ "$#" -eq 3 ]; then
+        iface=$1
+        msg=$2
+        mac=$3
+    elif [ "$#" -eq 4 ]; then
+        # wlan1 STA-OPMODE-SMPS-MODE-CHANGED 84:c7:de:ed:be:ef off
+        if [ "$2" -ne "STA-OPMODE-SMPS-MODE-CHANGED" ]; then
+          err_msg "Unknown type of push_event"
+          exit 1
+        fi
+
+        iface=$1
+        msg=$2
+        mac=$3
+        status=$4
+    else
         err_msg "Illegal number of push_event parameters"
         exit 1
     fi
-    iface=$1
-    msg=$2
-    mac=$3
     
     config_get hass_timeout_conn global timeout_conn
     config_get hass_timeout_disc global timeout_disc
+    config_get hass_source_name global source_name `uci get system.@system[0].hostname`
     
     case $msg in 
         "AP-STA-CONNECTED")
@@ -114,24 +108,28 @@ push_event() {
 
             timeout=$hass_timeout_disc
             ;;
+        "STA-OPMODE-SMPS-MODE-CHANGED")
+            timeout=$hass_timeout_conn
+            ;;
         *)
             logger -t $0 -p warning "push_event not handled"
             return
             ;;
     esac
 
-    post $(build_payload "$mac" "$(get_host_name $mac)" "$timeout")
+    post $(build_payload "$mac" "$(get_host_name $mac)" "$timeout" "$hass_source_name")
 }
 
 sync_state() {
     logger -t $0 -p debug "sync_state $@"
 
     config_get hass_timeout_conn global timeout_conn
+    config_get hass_source_name global source_name `uci get system.@system[0].hostname`
 
     for interface in `iw dev | grep Interface | cut -f 2 -s -d" "`; do
         maclist=`iw dev $interface station dump | grep Station | cut -f 2 -s -d" "`
         for mac in $maclist; do
-            post $(build_payload "$mac" "$(get_host_name $mac)" "$hass_timeout_conn") &
+            post $(build_payload "$mac" "$(get_host_name $mac)" "$hass_timeout_conn" "$hass_source_name") &
         done
     done
 }
