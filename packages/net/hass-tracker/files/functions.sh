@@ -109,7 +109,7 @@ push_event() {
             timeout=$hass_timeout_disc
             ;;
         "STA-OPMODE-SMPS-MODE-CHANGED")
-            timeout=$hass_timeout_conn
+            return
             ;;
         *)
             logger -t $0 -p warning "push_event not handled"
