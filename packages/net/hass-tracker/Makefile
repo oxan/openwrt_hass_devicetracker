@@ -42,6 +42,7 @@ endef
 define Package/hass-tracker/install
 	$(INSTALL_DIR) $(1)/usr/bin
 	$(INSTALL_BIN) ./files/hass-trackerd.sh $(1)/usr/bin/
+	$(INSTALL_BIN) ./files/hass-sync.sh $(1)/usr/bin/
 
 	$(INSTALL_DIR) $(1)/usr/lib
 	$(INSTALL_DIR) $(1)/usr/lib/hass-tracker
